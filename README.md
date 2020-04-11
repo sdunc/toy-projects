@@ -1,1 +1,3 @@
 # sandpile
+
+![Sandpile](sandpile.png)
