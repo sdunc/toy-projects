@@ -7,5 +7,5 @@
 ![Sandpile](sandpile.png)
 
 # art.py
-![bec](bec1.png)
-![bec2](bec2.png)
+![bec](bec1.PNG)
+![bec2](bec2.PNG)
