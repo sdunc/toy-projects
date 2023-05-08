@@ -32,6 +32,7 @@
 #include "pico/stdlib.h"
 
 #define SPI_PORT spi0
+// not const in c, prefer define
 const uint gpio_cs_dac = 17;
 const uint gpio_cs_adc = 20;
 const uint sck_gpio = 18;
@@ -39,7 +40,10 @@ const uint mosi_gpio = 19;
 const uint miso_gpio = 16;
 static spi_inst_t* spi = spi0;
 
-static float vref = 4.096;
+static float vref = 3.3;//4.096;
+
+static float v_chan0 = 0.0f;
+static float v_chan1 = 0.0f;
 
 #define INPUT_BUFFER_LEN (16U)
 #define INPUT_BUFFER_LAST_IDX (INPUT_BUFFER_LEN - 1)
@@ -56,15 +60,15 @@ static uint8_t spi_buffer[3];
 static uint8_t spi_recv_buffer[3] = {0};
 
 static inline void cs_select(int gpio_cs_pin) {
-  asm volatile("nop \n nop \n nop");
+  //asm volatile("nop \n nop \n nop");
   gpio_put(gpio_cs_pin, 0);
-  asm volatile("nop \n nop \n nop");
+  //asm volatile("nop \n nop \n nop");
 }
 
 static inline void cs_deselect(int gpio_cs_pin) {
-  asm volatile("nop \n nop \n nop");
+  //asm volatile("nop \n nop \n nop");
   gpio_put(gpio_cs_pin, 1);
-  asm volatile("nop \n nop \n nop");
+  //asm volatile("nop \n nop \n nop");
 }
 
 static void inline SendByte(uint8_t data, int gpio_cs_pin) {
@@ -86,6 +90,12 @@ static void PrintChannelVoltage(void) {
   printf("%f\n",*(uint16_t*)spi_recv_buffer * (vref / 65536.0));
 }
 
+static float ChannelBufferToVoltage(void) {
+  uint8_t temp = spi_recv_buffer[0];
+  spi_recv_buffer[0] = spi_recv_buffer[1];
+  spi_recv_buffer[1] = temp;
+  return *(uint16_t*)spi_recv_buffer * (vref / 65536.0);
+}
 
 /* Did the user hit enter after us_delay?  This function causes side effects:
    incrementing buffer_idx when a char is inserted Decrementing buffer_idx when
@@ -186,6 +196,24 @@ void InitSPI(void) {
   gpio_put(gpio_cs_adc, 1);
 }
 
+static void ReadADC(void) {
+  // read channel 0
+  spi_buffer[0] = 0x00;
+  spi_buffer[1] = 0x00;
+  cs_select(gpio_cs_adc);
+  spi_write_read_blocking(spi, spi_buffer, spi_recv_buffer, 2);
+  cs_deselect(gpio_cs_adc);
+  v_chan0 = ChannelBufferToVoltage();
+
+  // read channel 1
+  spi_buffer[0] = 0x10;
+  spi_buffer[1] = 0x00;
+  cs_select(gpio_cs_adc);
+  spi_write_read_blocking(spi, spi_buffer, spi_recv_buffer, 2);
+  cs_deselect(gpio_cs_adc);
+  v_chan1 = ChannelBufferToVoltage();
+}
+
 static void SelectChannel1(void) {
   spi_buffer[0] = 0x10;
   spi_buffer[1] = 0x00;
@@ -205,11 +233,17 @@ static void SelectChannel0(void) {
   cs_select(gpio_cs_adc);
   spi_write_read_blocking(spi, spi_buffer, spi_recv_buffer, 2);
   cs_deselect(gpio_cs_adc);
+  v_chan0 = ChannelBufferToVoltage();
 
-  printf("0:");
-  PrintChannelVoltage();
+  // read channel 1
+  spi_buffer[0] = 0x10;
+  spi_buffer[1] = 0x00;
+
+  cs_select(gpio_cs_adc);
+  spi_write_read_blocking(spi, spi_buffer, spi_recv_buffer, 2);
+  cs_deselect(gpio_cs_adc);
+  v_chan1 = ChannelBufferToVoltage();
 }
-
 
 int main() {
   stdio_init_all();
@@ -236,10 +270,10 @@ int main() {
     if (UserHitEnter(20)) {
       ExecuteCommand();
       InputBufferClean();
-      SelectChannel0();
-      sleep_us(3);
-      SelectChannel1();
-      sleep_ms(1);
+      sleep_us(1);
+      ReadADC();
+      ReadADC();
+      printf("0: %f\t1: %f\n", v_chan0, v_chan1);
     }
   }
   return 0;
